@@ -1,0 +1,52 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Download offline models into the app
+        run: |
+          cd app/src/main/assets
+          [ -f detector.tflite ] || curl -fL -o detector.tflite \
+            https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite
+          if [ ! -d model-en ]; then
+            curl -fL -o en.zip https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip
+            unzip -q en.zip && mv vosk-model-small-en-in-0.4 model-en && rm en.zip
+          fi
+          if [ ! -d model-hi ]; then
+            curl -fL -o hi.zip https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip
+            unzip -q hi.zip && mv vosk-model-small-hi-0.22 model-hi && rm hi.zip
+          fi
+          ls -la . model-en model-hi
+
+      - name: Check wake words exist in the voice models (info only)
+        run: |
+          grep -c -x "hello" app/src/main/assets/model-en/graph/words.txt || echo "WARNING: 'hello' not in English vocabulary"
+          grep -c -x "vision" app/src/main/assets/model-en/graph/words.txt || echo "WARNING: 'vision' not in English vocabulary"
+          grep -c -x "दृष्टि" app/src/main/assets/model-hi/graph/words.txt || echo "WARNING: 'दृष्टि' not in Hindi vocabulary"
+        continue-on-error: true
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DrishtiVoice-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
